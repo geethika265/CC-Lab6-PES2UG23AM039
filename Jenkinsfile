@@ -3,12 +3,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout SCM') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Build Backend Image') {
             steps {
                 sh '''
@@ -21,14 +15,17 @@ pipeline {
         stage('Deploy Backend Containers') {
             steps {
                 sh '''
-                # Remove old containers if any
+                # Stop/remove nginx first (it is connected to the network)
+                docker rm -f nginx-lb || true
+
+                # Remove old backend containers
                 docker rm -f backend1 backend2 || true
 
-                # Recreate network cleanly
+                # Remove + recreate network cleanly
                 docker network rm app-network || true
                 docker network create app-network
 
-                # Start backend containers on the network
+                # Start backends
                 docker run -d --name backend1 --network app-network backend-app
                 docker run -d --name backend2 --network app-network backend-app
                 '''
@@ -38,20 +35,15 @@ pipeline {
         stage('Deploy NGINX Load Balancer') {
             steps {
                 sh '''
-                # Remove old nginx if exists
-                docker rm -f nginx-lb || true
-
-                # Start nginx on same network
+                # Start nginx again on the recreated network
                 docker run -d \
                   --name nginx-lb \
                   --network app-network \
                   -p 80:80 \
                   nginx
 
-                # Copy updated nginx config
+                # Copy config and validate
                 docker cp nginx/default.conf nginx-lb:/etc/nginx/conf.d/default.conf
-
-                # Test config inside container
                 docker exec nginx-lb nginx -t
 
                 # Restart to apply config
