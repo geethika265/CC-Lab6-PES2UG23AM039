@@ -1,5 +1,6 @@
 pipeline {
     agent any
+
     stages {
         stage('Build Backend Image') {
             steps {
@@ -9,16 +10,19 @@ pipeline {
                 '''
             }
         }
+
         stage('Deploy Backend Containers') {
             steps {
                 sh '''
                 docker network create app-network || true
                 docker rm -f backend1 backend2 || true
+
                 docker run -d --name backend1 --network app-network backend-app
                 docker run -d --name backend2 --network app-network backend-app
                 '''
             }
         }
+
         stage('Deploy NGINX Load Balancer') {
             steps {
                 sh '''
@@ -30,12 +34,19 @@ pipeline {
                   -p 80:80 \
                   nginx
 
+                # Copy your nginx config into the container
                 docker cp nginx/default.conf nginx-lb:/etc/nginx/conf.d/default.conf
-                docker exec nginx-lb nginx -s reload
+
+                # Restart nginx container to load config (avoids /run/nginx.pid reload timing issue)
+                docker restart nginx-lb
+
+                # Optional: verify config is valid
+                docker exec nginx-lb nginx -t
                 '''
             }
         }
     }
+
     post {
         success {
             echo 'Pipeline executed successfully. NGINX load balancer is running.'
